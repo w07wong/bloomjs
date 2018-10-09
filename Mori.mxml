@@ -1,0 +1,850 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--Main Application Declaration and Canvas-->
+<mx:Application xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute" horizontalAlign="center" alpha="1" visible="true" preloader="CustomPreloader" backgroundColor="0x000000" frameRate="60">
+	<mx:Canvas id="main" backgroundColor="0x000000" creationComplete = "init();"  alpha="1" backgroundAlpha="1" horizontalCenter="1" verticalCenter="1.5" width="100%" height="100%">
+	</mx:Canvas>
+	
+	<mx:UIComponent id="mainDisplay" height="100%"/>
+	
+	<!--<mx:Canvas id="realtime" backgroundColor="0xFFFFFF" width="100%" height="25%">
+	</mx:Canvas>-->
+	
+	<!--Image Palette-->
+	<mx:Image id="paletteImage" source="{imgCls}" visible="false"/>
+	
+	<mx:Label id="center" x="298" y="179" text="Label" visible="false"/>
+	<mx:Label id="loading" x="{this.width/2-50}" y="{this.height/2-50}"  text="Loading..." fontWeight="bold"  fontSize="18" visible="true"/>
+	
+	<!--Menu-->
+	<mx:HBox height="20" width="100%" visible="false" includeInLayout="false" backgroundColor="#DDDDDD">
+		<mx:Text text="Bloom" visible="true" fontWeight="bold" fontSize="16" fontFamily="Arial" color="#436A73"/>
+		<mx:LinkButton label="About" color="#000000" fontWeight="bold" click="Alert.show('Work in Progress:\n-------------------------------------------------------\nBloom: A Tribute to Kenneth Noland\nKen Goldberg, Sanjay Krishnan,\nFernanda Viagas, Martin Wattenberg\nIn this internet-based earthwork, minute movements of the Hayward Fault in California are detected by a seismograph, transmitted continuously via the Internet, and processed to generate an evolving field of circular blooms. The size and position of each bloom is based on real-time changes in the Earth\'s motion, measured as a vertical velocity continuously updated from the seismometer.  The horizontal position of blooms is based on time, their vertical position is based on magnitude of the second derivative (rate of change), and their size is based on the relative size of the extremum.  Large movements create large blooms; small jitters create tiny buds. All colors come from photographs of flowers found on Flickr. Special thanks to the UC Berkeley Seismology Department for the live data feed from the Hayward Fault seismometer station and to David Nachum, Vijay Vasudevan, Woj Matusek for work on earlier versions.');"/>
+		<mx:LinkButton label="Control Panel" color="#000000" fontWeight="bold" click="openControlPanel()"/>
+	</mx:HBox>
+	
+	<mx:Script>
+		<![CDATA[
+			import flash.display.Graphics;
+			import flash.display.Loader;
+			import flash.events.TimerEvent;
+			import flash.net.URLRequest;
+			import flash.utils.Timer;
+			
+			import mx.collections.ArrayCollection;
+			import mx.containers.Canvas;
+			import mx.containers.TitleWindow;
+			import mx.controls.Alert;
+			import mx.controls.Image;
+			import mx.controls.Label;
+			import mx.controls.Text;
+			import mx.controls.VSlider;
+			import mx.core.FlexSprite;
+			import mx.core.IFlexDisplayObject;
+			import mx.core.IUIComponent;
+			import mx.effects.Blur;
+			import mx.effects.Dissolve;
+			import mx.effects.Fade;
+			import mx.effects.Zoom;
+			import mx.effects.easing.Exponential;
+			import mx.effects.effectClasses.*;
+			import mx.events.CloseEvent;
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			
+			//Variables
+			[Embed(source="palette10.jpg")] [Bindable]public var imgCls:Class;	
+			// Timer which dispatches event on a fixed interval to update the graphics
+			private var animationTimer:Timer;
+			
+			// Time interval with which to update graphics
+			// Tampering with this will alter the speed of the animation
+			private const animationDelay:Number = 350;//250;
+			
+			// Socket through which the data stream is read
+			private var socket:Socket;
+			//[Bindable] [Embed(source="preloader.png")] public static var LOAD_BACKGROUND:Class;
+			
+			// host url
+			private static const HOST_NAME:String = "memento.ieor.berkeley.edu";
+			// port number
+			private static const PORT_NUMBER:int = 6021;
+			
+			private static const maxBufferSize:int = 100000;
+			
+			/* Variables used for reading data from socket:
+			* Read description of onSocketData() for understanding of how these work
+			*/			
+			private var packetSize:int; // number of samples in current packet
+			private var readSingleByte:Boolean; // whether on this SOCKET_DATA event we should simply be reading a single byte, or not
+			private var readFromStart:Boolean; // whether on this SOCKET_DATA event we should be reading a packet from its start
+			private var BHZ:Boolean; // whether the current data is from channel BHZ (in which case we store and display the data) or not
+			private var whatsLeft:int; // number of samples to read on the next SOCKET_DATA event
+			private var bytesToIgnore:int; // number of bytes to ignore on the next SOCKET_DATA event
+			
+			private var animationBegun:Boolean = false;
+			
+			// The buffer in which the samples (to display) are stored
+			private var samplesBuffer:ArrayCollection;
+			
+			// The buffer in which time array is kept
+			private var timeCoordinates:ArrayCollection;
+			
+			// Delay matching variables
+			// For ease of making the line enter the screen (from the left) gradually, we have a delayed samples buffer in addition to the main samples buffer
+			// More details in onAnimationTimer
+			private var delayedSamples:ArrayCollection;
+			private var hasAdded:Boolean; // whether we have added samples to the delayed samples buffer
+			private var firstDelayed:Boolean; // the first time we display samples from the delayed samples buffer, we don't clear the transition (for a clean transition)
+			
+			// true if some samples already received
+			private var firstSampleReceived:Boolean = false;  
+			
+			// To load data from file
+			private var loader:URLLoader;
+			
+			private var imageLoader:Loader;
+			private var imageData:BitmapData;
+			
+			// Indicates whether we had some problems
+			private var errors:Boolean;
+			
+			// System time when applet is started
+			private var appletStartTime:Number; 
+			
+			// Keeping time for animation purposes
+			private var startTime:Number;
+			
+			// When displaying the data, this value will be used to offset the values so that they fit within the screen nicely
+			private var averageSampleValue:int;
+			
+			// The effective start of samplesBuffer
+			private var startPosition:int;        
+			
+			// Error messages
+			private static const socketErrorMessage:String = "Live data is currently unavailable. Displaying prerecorded data.";
+			private static const connectionClosedMessage:String = "Hit reload for another 5 minutes of data";
+			private static const allChannelsBusyMessage:String = "Sorry! All client connections to Memento Mori are currently in use. Please try again in 10 minutes.";
+			private static const connectionLostMessage:String = "Connection Lost";
+			private static const timeOutMessage:String = "Live data is currently unavailable. Displaying prerecorded data.";  
+			
+			// Root of the names of the files that contain prerecorded data
+			private static const dataFileNameRoot:String = "data"; 
+			
+			/*
+			* All the following variables relate to animation and buffering
+			*/
+			
+			// The number of samples in the buffer size which we are still interested in (ie have not yet displayed)
+			private var bufferSize:int;
+			
+			// Indicates if we display (animate) the display
+			// at the moment
+			// used in initializeAnimation
+			private var running:Boolean = false;
+			
+			// Upper limits on the size of the buffer
+			private var absoluteMax:int = 2000;
+			private var moreThanAbsoluteMax:int = 2200;
+			
+			// if the buffer is larger than minToDisplay we start displaying data
+			private var minToDisplay:int = 1000;
+			
+			// if the buffer is smaller than maxToStop we (temporairly) stop displaying data
+			private var maxToStop:int = 500;
+			
+			// interval between removing a sample from a buffer  
+			private var millisecInterval:int = 85;
+			
+			// adjusted and real interval between removing a sample from a buffer
+			private var waitInterval:int;
+			private var bufferCount:int = 0;
+			
+			
+			private var enoughData:Boolean;
+			private var flowerIndex:int;
+			private var fakeFlowerIndex:int = 0;
+			private var breaks:ArrayCollection;
+			private var lastBreak:int = 0;
+			
+			private var dataFileName:String = "data.txt"; // File to get data from (if can't get live data)
+			private var imageWidth:int;
+			private var imageHeight:int;
+			
+			private var speed:int = 3;
+			
+			private var colorImage:Image;
+			
+			private var imageReady:Boolean;
+			
+			private var zoomDuration:int = 600;
+			
+			private var thinStripe:Number = 10;
+			private var regularStripe:Number = 30;
+			
+			private var maxNumFlowers:int = 18;
+			
+			private var totalPacketLoadTime:Number;
+			private var socketStartTime:Number;
+			private var sumOfSizes:Number;
+			private var numberOfPeaks:int;
+			private var averageProportion:Number;
+			private var numPackets:int;
+			private var prevY:int = 0;
+			// private var line:UIComponent;
+			private var traceMiddle:Number;
+			
+			
+			// INIT
+			public function init():void
+			{
+				Security.allowDomain("memento.ieor.berkeley.edu");
+				Security.loadPolicyFile("xmlsocket://"+"memento.ieor.berkeley.edu"+":"+"843");
+				totalPacketLoadTime = 0;
+				sumOfSizes = 0;
+				numberOfPeaks = 0;
+				averageProportion = 0;
+				numPackets = 0;
+				prevY = main.height/2;
+				
+				
+				// Time at which the applet begins
+				appletStartTime = (new Date()).valueOf();
+				
+				enoughData = false;
+				flowerIndex = 0;
+				breaks = new ArrayCollection();
+				lastBreak = 0;
+				
+				// As of now, there are no errors
+				errors = false;
+				
+				// These tell onSocketData() what to do when the socket has new data (see onSocketData())
+				readSingleByte = true;
+				readFromStart = true;
+				BHZ = false;
+				
+				// Buffer that stores data
+				samplesBuffer = new ArrayCollection();
+				launchAnimation();
+				//setTimeout(drawRandomFlowers,100);
+				animationBegun = true;
+				
+				// Create the socket and connect to it
+				socket = new Socket();
+				// Whenever the socket receives new data, onSocketData is called
+				socket.addEventListener(ProgressEvent.SOCKET_DATA, onSocketData);
+				socket.addEventListener('close', onSocketClose);
+				socket.addEventListener('ioError', onSocketClose);
+				socket.addEventListener('securityError', onSocketClose);
+				// Record the time the socket is connected to
+				socketStartTime = (new Date()).valueOf();
+				// Connect
+				socket.connect(HOST_NAME, PORT_NUMBER);
+				
+				//line = new UIComponent();
+				//line.graphics.lineStyle(1,0x000FFF,0.7);
+				//			 traceMiddle = realtime.height;
+				// line.graphics.moveTo(20,traceMiddle);
+				//				 realtime.addChild(line);
+				
+				/*
+				// Loader to read data files in
+				loader = new URLLoader();
+				
+				try
+				{
+				loader.load(new URLRequest(dataFileName));
+				}
+				catch (error:Error)
+				{
+				trace("Unable to load prerecorded data from file " + dataFileName);
+				}
+				
+				loader.addEventListener(Event.COMPLETE, onLoaderComplete); // When file is loaded, call onLoaderComplete()
+				*/
+			}
+			
+			// called once there is enough data
+			public function launchAnimation():void
+			{
+				preparePalette();//extract info from pallette
+				setInterval(onFlowerTimer,animationDelay);
+				//animationTimer = new Timer(animationDelay);
+				//animationTimer.addEventListener("timer", onFlowerTimer);
+				//animationTimer.start();
+			}
+			
+			// allows extracting colors from the palette image
+			public function preparePalette():void
+			{
+				imageWidth = paletteImage.contentWidth;
+				imageHeight = paletteImage.contentHeight;
+				imageData = new BitmapData(imageWidth, imageHeight);
+				imageData.draw(paletteImage.content);
+			}
+			
+			
+			/* 
+			* Function called when SOCKET_DATA event is dispatched (ie when there is new data on the socket's stream)
+			* When the event is dispatched, the program enters one of three stages:
+			* 1. Reading the 'first byte' (used to determine whether the server is sending data)
+			* 2. Reading the packet header info (such as channel name, packet size, etc) and the packet's samples
+			* 3. Being in the middle of reading samples from a packet
+			*/
+			public function onSocketData(event:ProgressEvent):void
+			{        	 
+				firstSampleReceived = true; // we have received the first sample
+				if (readFromStart)
+				{
+					if (readSingleByte) readFirstByte(); // Stage 1
+					else readPacketFromStart(); // Stage 2
+				}
+				else readPartialPacket(); // Stage 3
+			}
+			
+			/* (Stage 1)
+			* Read one byte to determine whether to continue reading from the stream
+			*/
+			public function readFirstByte():void
+			{
+				readSingleByte = false;
+				readFromStart = true;
+				if (socket.readByte() != 20)
+				{
+					if (firstSampleReceived) trace(connectionClosedMessage); // Server does not want to CONTINUE to send more packets - connection timed out
+					else trace(allChannelsBusyMessage); // Server sends just one byte indicating that there are too many users logged in
+					errors = true;	
+				}
+			}
+			
+			/* (Stage 2)
+			* Read station name, channel name, packet size, and time
+			* Then read packet samples
+			*/  
+			public function readPacketFromStart():void
+			{
+				firstSampleReceived = true;	// Indicate that first samples have been received
+				readSingleByte = true; // Unless this later is changed, this tells onSocketData() to call readFirstByte() next time SOCKET_DATA event is dispatched
+				try
+				{
+					// Read station name. Since it is never used, we do not save it, we simply progress through to the next data we need from the stream
+					var c:String = String.fromCharCode(socket.readByte());
+					while (c != "\n") c = String.fromCharCode(socket.readByte());
+					// Read channel name
+					var channel:String = socket.readUTFBytes(4).substring(0,3);
+					// We only store data from the BHZ channel. This flag is used in other functions to determine whether to save the samples into the samples buffer.
+					BHZ = (channel == "BHZ");
+					// Read number of samples in the packet
+					packetSize = socket.readUnsignedShort();
+					//trace(packetSize);
+					// Read unused bytes; the first three are the hour, minute, second of the packet. None of this is used, so it is not stored.
+					socket.readUTFBytes(7);
+					// Read the appropriate number of samples from the stream
+					readFromStream(packetSize);
+				}
+				catch(e:EOFError)
+				{
+					//trace(e);
+				}
+			}
+			
+			/* (Stage 3)
+			* Function called when part of a packet of samples remains to be read when the SOCKET_DATA event is dispatched
+			* Header info (channel name, packet size, time, etc) are not read - only samples are
+			*/
+			public function readPartialPacket():void
+			{
+				readSingleByte = true; // These two tell onSocketData() which function to call when it next is invoked
+				readFromStart = true;
+				
+				// Bytes that must be read to arrive at the next (int) sample (because full int may not have been available at the end of last SOCKET_DATA event)
+				try{
+					socket.readUTFBytes(bytesToIgnore);
+				}
+				catch(err:Error){}
+				
+				// Read what remains of the packet
+				readFromStream(whatsLeft);
+			}
+			
+			/* Read samples from socket and save to buffer when appropriate
+			* This function is called by readPacketFromStart and readPartialPacket(), both of which are called by onSocketData()
+			*/
+			public function readFromStream(numSamples:int):void
+			{	         	
+				for (var i:int = 0; i < numSamples; i++)
+				{
+					// Case where entire packet cannot be read before the socket dispatches a SOCKET_DATA event again
+					if (((i < numSamples - 1)&&(socket.bytesAvailable == 4)) || (socket.bytesAvailable < 4))
+					{
+						// Indicate that when a SOCKET_DATA event is next dispatched, start reading samples immediately (do not read packet header) 
+						readFromStart = false;
+						
+						// Number of bytes to be read before next int is available
+						bytesToIgnore = 4 - socket.bytesAvailable;
+						
+						// Number of samples to be read after next SOCKET_DATA event is dispatched
+						whatsLeft = packetSize - i - Math.ceil(bytesToIgnore/4);
+						
+						// If an entire int still is available and the channel is BHZ, save the int
+						if (BHZ && (socket.bytesAvailable == 4))
+						{
+							var temp:int = socket.readInt();
+							if (Math.abs(temp) < 1000000)
+							{
+								samplesBuffer.addItemAt(temp,bufferCount%maxBufferSize);
+								bufferCount++;
+							}
+							else
+							{
+								socket.readByte();
+							}
+						}
+							// Otherwise just read what is left, without saving
+						else
+							socket.readUTFBytes(socket.bytesAvailable);
+						break;
+					}
+					// Regular case
+					if (socket.bytesAvailable >= 4)
+					{
+						if (BHZ)
+						{
+							try{
+								var temp:int = socket.readInt()
+								if (Math.abs(temp) > 1000000)
+								{
+									trace('Byte alignment broken...realigning')
+									socket.readByte();
+								}
+								else
+								{
+									trace(temp+'')
+									samplesBuffer.addItemAt(temp,bufferCount%maxBufferSize);// If channel is BHZ, save to buffer
+									bufferCount++;
+								}
+							}
+							catch(err:Error){}
+						}
+						else socket.readInt(); // Otherwise, do not
+					}
+				}
+				
+				/* if (!animationBegun && samplesBuffer.length > 50)
+				{
+				animationBegun = true;
+				launchAnimation();
+				return;
+				}*/
+			}
+			
+			public function onFlowerTimer(event:TimerEvent=null):void
+			{					
+				var lastbv:int = value(samplesBuffer,lastBreak); 
+				var avg:Number = runningAverage(samplesBuffer,flowerIndex,10);
+				var peak_detect_array:Array = minmax(samplesBuffer, flowerIndex);
+				var amp:int = peak_detect_array[0];  // determine whether current spot is a peak
+				loading.visible = false;
+				loading.includeInLayout = false;
+				
+				var alpha:Number = 1;
+				var change:Number = Math.max(-40,Math.min(40,(value(samplesBuffer,flowerIndex)+.05*amp-avg)/150));
+				
+				alpha = Math.abs(change)/40 + .4;
+				alpha = Math.min(1,alpha);
+				
+				/*		if(value(samplesBuffer,flowerIndex)+.05*amp-avg < 0)
+				{
+				line.graphics.lineStyle(1,0xDC143C,alpha);
+				}
+				else
+				{
+				line.graphics.lineStyle(1,0x008000,alpha);
+				}
+				
+				//if(amp != 0)
+				//line.graphics.drawCircle((20 + 2*(flowerIndex-1))%main.width,traceMiddle-Math.max(-100,Math.min(100,Math.abs(value(samplesBuffer,flowerIndex)+.03*amp-avg)/20)),3);
+				
+				if((20 + 2*flowerIndex)%main.width < 30)
+				{
+				line.graphics.clear();
+				line.graphics.moveTo(20,traceMiddle);
+				}
+				
+				line.graphics.lineTo((20 + 2*flowerIndex)%main.width,traceMiddle-Math.max(-130,Math.min(130,Math.abs(value(samplesBuffer,flowerIndex)+.02*amp-avg)/30)));
+				line.graphics.lineTo((20 + 2*flowerIndex)%main.width,traceMiddle);*/
+				
+				if(amp != 0)
+				{
+					var relativeHeight:Number = Math.abs(amp);
+					var secondDeriv:Number = peak_detect_array[1];//value(samplesBuffer,flowerIndex-2)-2*value(samplesBuffer,flowerIndex-1)+value(samplesBuffer,flowerIndex);
+					var size:Number = Math.abs(secondDeriv)*1.4*TunableParameters.BLOOM_SCALE/100;//relativeHeight2.5;
+					var fX:Number = (50 * (fakeFlowerIndex + 100)) % (main.width - 100);
+					//var fY:Number = main.height/2 - amp/8;
+					var fY:Number = (main.height-100)*Math.random()+100;
+					//main.height2 + secondDeriv*1; amplify the deviation
+					
+					fY = Math.max(50, Math.min(main.height-150,fY));
+					fX = Math.max(50, Math.min(main.width-50,fX));
+					size = Math.max(170, Math.min(320,size));
+					drawFlower(fX,fY,size);					
+					lastBreak = flowerIndex;
+					prevY = fY;
+				}
+				else
+				{
+					if(flowerIndex - lastBreak > 9)
+					{
+						var fX:Number = (50 * (fakeFlowerIndex + 100)) % (main.width - 100);
+						fX = Math.max(100, Math.min(main.width-100,fX));
+						var amp:int = value(samplesBuffer,flowerIndex); // determine whether current spot is a peak
+						var avg:Number = runningAverage(samplesBuffer,flowerIndex,7);
+						var secondDeriv:Number = value(samplesBuffer,flowerIndex-2)-2*value(samplesBuffer,flowerIndex-1)+value(samplesBuffer,flowerIndex);
+						var size = Math.max(150,Math.min(320,400*Math.abs(amp/avg)));
+						//var fY:Number = main.height/2 - amp/8;
+						var fY:Number = (main.height-100)*Math.random()+100;
+						//size = Math.max(200, Math.min(400,size));
+						drawFlower(fX,fY,size);
+						lastBreak = flowerIndex;
+					}
+				}
+				
+				if (samplesBuffer.length > 0 && flowerIndex < samplesBuffer.length)
+					flowerIndex++;	
+				else
+				{
+					var fX:Number = (50 * (fakeFlowerIndex + 100)) % (main.width - 100);
+					//var fY:Number =(main.height -100)*Math.random() + 100;
+					var size = Math.max(100,300*Math.random());
+					if (Math.random() < .15)
+						drawFlower(fX,prevY + (Math.random()-.5)*300,size);
+				}
+				fakeFlowerIndex ++;
+			}
+			
+			public function drawRandomFlowers():void
+			{
+				/*for(var i:int =0; i<5; i++)	
+				{
+				var fX:Number = (i/10)*main.width;
+				var fY:Number = main.height/2+ (Math.random()-.5)*300; //amplify the deviation
+				
+				fY = Math.max(100, Math.min(main.height-100,fY));
+				fX = Math.max(100, Math.min(main.width-100,fX));
+				setTimeout(drawFlower,i*20*animationDelay,fX,fY,150*Math.random());
+				}*/
+			}
+			
+			public var old_color_map:String = TunableParameters.COLOR_MAP;
+			
+			/*This method draws the flower at x,y with size
+			*/
+			public function drawFlower(x:Number, y:Number, size:Number):void
+			{
+				if (old_color_map != TunableParameters.COLOR_MAP)
+				{
+					preparePalette();
+					old_color_map = TunableParameters.COLOR_MAP;
+				}
+				
+				thinStripe = 7;
+				regularStripe = 13;
+				var numStripes:int = 15;
+				var flower:UIComponent = new UIComponent();
+				
+				var curSize:Number;
+				var colors:Array = new Array()
+				
+				var startX:Number = Math.random();	
+				var startY:Number = Math.random();
+				
+				for (var i:int = 0; i < numStripes; i++)
+				{
+					var sampleX:Number = Math.max(Math.min(startX + (Math.random()/3 - .165),.99),0.05);
+					var sampleY:Number = Math.max(Math.min(startY + (Math.random()/3 - .165),.99),0.05);
+					var color:int = getColor(sampleX,sampleY);
+					colors.push(bucket({"color":color,"hue":getColorH(color),"bright":getColorV(color)}));
+					startX = sampleX;
+					startY = sampleY;
+				}
+				colors.sortOn(["hue",'bright'],Array.NUMERIC);
+				//colors.reverse();
+				for (var i:int = 0; i < numStripes; i++)
+				{
+					curSize = size - (int(i > 0)*thinStripe) - (int(i > 1)*(i-1)*regularStripe);
+					
+					if (curSize < thinStripe)
+						break;
+					
+					flower.graphics.beginFill(colors.pop()['color']);
+					flower.graphics.drawCircle(x+main.x,y+main.y,curSize);
+					flower.graphics.endFill();
+				}
+				flower.cacheAsBitmap = true;
+				
+				// Flower zoom effect
+				var flowerZoom:Zoom = new Zoom(flower);
+				flowerZoom.duration = 200 + size*7;
+				flowerZoom.originX = x;
+				flowerZoom.originY = y;
+				flowerZoom.zoomHeightFrom = 0;
+				flowerZoom.zoomHeightTo = 1.0;
+				flowerZoom.zoomWidthFrom = 0;
+				flowerZoom.zoomWidthTo = 1.0;
+				flowerZoom.play();
+				
+				// Flower blur effect
+				var flowerBlur:Blur = new Blur(flower);
+				flowerBlur.blurXFrom = 0;
+				flowerBlur.blurYFrom = 0;
+				flowerBlur.blurXTo = 15.0;
+				flowerBlur.blurYTo = 15.0;
+				flowerBlur.duration = 8000;
+				setTimeout(flowerBlur.play,flowerZoom.duration);
+				
+				var flowerFade1:Fade = new Fade(flower);
+				flowerFade1.duration = flowerZoom.duration;
+				flowerFade1.alphaFrom = 0.0;
+				flowerFade1.alphaTo = 1.0;
+				flowerFade1.play()
+				
+				// Flower fade effect
+				var flowerFade:Fade = new Fade(flower);
+				flowerFade.duration = 22000;
+				flowerFade.alphaFrom = 1.0;
+				flowerFade.alphaTo = 0.0;
+				flowerFade.easingFunction = mx.effects.easing.Cubic.easeOut;
+				setTimeout(flowerFade.play,flowerZoom.duration);			
+				
+				if (mainDisplay.numChildren >= maxNumFlowers)
+					mainDisplay.removeChildAt(0);
+				mainDisplay.addChild(flower);
+				setTimeout(safeRemove,flowerZoom.duration + flowerFade.duration ,flower);
+				
+			}
+			
+			public function safeRemove(flower:UIComponent):void
+			{
+				try
+				{
+					mainDisplay.removeChild(flower)
+				}
+				catch(err:Error){}
+			}
+			
+			public function bucket(colorDict:Object):Object
+			{
+				return colorDict;
+			}
+			
+			/* Gets the color at point x,y (0<=c,d<=1)
+			*/
+			public function getColor(c:Number,d:Number):int
+			{
+				var x:int = c*imageWidth;
+				var y:int = d*imageHeight;
+				return imageData.getPixel(x,y);
+			}
+			
+			public function getColorH(color:uint):Number
+			{
+				var rgb:uint = color;
+				var red:int =  (rgb >> 16 & 0xff);
+				var green:int =  (rgb >> 8 & 0xff);
+				var blue:int =  (rgb & 0xff);
+				return RGBtoH(red/255.0,green/255.0,blue/255.0);
+			}
+			
+			public function getColorV(color:uint):Number
+			{
+				var rgb:uint = color;
+				var red:int =  (rgb >> 16 & 0xff);
+				var green:int =  (rgb >> 8 & 0xff);
+				var blue:int =  (rgb & 0xff);
+				
+				return RGBtoV(red/255.0,green/255.0,blue/255.0);
+			}
+			
+			public static function RGBtoH (r: Number, g: Number, b: Number): Number
+			{
+				var max:Number = Math.max(r,g,b);
+				var min:Number = Math.min(r,g,b);
+				var delta:Number = max - min;
+				
+				var hue:Number = 0;
+				
+				if( r == max )
+					hue = ( g - b ) / delta;
+				else if( g == max )
+					hue = 2 + ( b - r ) / delta;
+				else
+					hue = 4 + ( r - g ) / delta;
+				
+				//hue *= 60;				// degrees
+				//if( hue < 0 )
+				//hue += 360;
+				return hue;	
+			}
+			
+			public static function RGBtoV (r: Number, g: Number, b: Number): Number
+			{
+				return Math.max(r,g,b);
+			}
+			
+			
+			/* m point moving average moving backwards from point c, c-m
+			*/
+			public function runningAverage(series:ArrayCollection,c:int ,m:int):Number
+			{
+				var sum:Number = 0;
+				for (var i:int = c-m; i <= c; i++)
+					sum += value(series, i);
+				
+				return sum/(m+1);
+			}
+			
+			
+			/*
+			* Value gets the mod index of the buffer allows for circular indexing
+			*/
+			public function value(series:ArrayCollection, n:int):Number
+			{
+				var m:int = n%series.length;
+				
+				if (m < 0)
+				{
+					m += series.length;
+				}
+				
+				if(series.length == 0)
+					return 0;
+				else
+					return Number(series.getItemAt(m));
+			}
+			
+			
+			/*
+			* If the value at i is an extrema then return it else 0
+			*/
+			public function minmax(s:ArrayCollection, i:int):Array
+			{
+				var x:Number = Math.abs(value(s,i)-runningAverage(samplesBuffer,flowerIndex,20));	
+				var px:Number = Math.abs(value(s,i-1)-runningAverage(samplesBuffer,flowerIndex-1,20));
+				var qx:Number = Math.abs(value(s,i+1)-runningAverage(samplesBuffer,flowerIndex+1,20));
+				
+				var xr:Number = value(s,i)-runningAverage(samplesBuffer,flowerIndex,20);	
+				var pxr:Number = value(s,i-1)-runningAverage(samplesBuffer,flowerIndex-1,20);
+				var qxr:Number = value(s,i+1)-runningAverage(samplesBuffer,flowerIndex+1,20);
+				var ppxr:Number = value(s,i-2)-runningAverage(samplesBuffer,flowerIndex-2,20);
+				var qqxr:Number = value(s,i+2)-runningAverage(samplesBuffer,flowerIndex+2,20);
+				
+				if (x >= px && x >= qx)
+				{
+					return  new Array(xr,.25*(xr-ppxr)+ .25*(xr-pxr)+.25*(xr-xr)+.25*(xr-qqxr),xr,pxr,qxr);;
+				}
+				
+				return new Array(0, .5*(x-px)+.5*(x-qx),x,px,qx);;
+			}
+			
+			
+			
+			// Load prerecorded data from file
+			public function loadDataFromFile():void
+			{
+				samplesBuffer = new ArrayCollection(); // clear the buffer
+				
+				// The name of the file to read the data from
+				var dataFileName:String = "data.txt";
+				
+				// NOTE: In the old Mori, we split the data into data0.txt, data1.txt, ..., data23.txt
+				// The code below randomly selected a file to go to
+				/*
+				var fileNumber:String = String(int(Math.round(Math.random()*23))); // random integer in [0,23]
+				var dataFileName:String = dataFileNameRoot + String(int(Math.round(Math.random()*23))) + ".txt";
+				
+				// Check for just data.txt
+				if (Math.random() > 0.8)
+				dataFileName = dataFileNameRoot + ".txt";
+				
+				*/
+				
+				loader.addEventListener(IOErrorEvent.IO_ERROR, onIOError); // If file error, call onIOError()
+				
+				try
+				{
+					loader.load(new URLRequest(dataFileName));
+				}
+				catch (error:Error)
+				{
+					trace("Unable to load prerecorded data from file " + dataFileName);
+				}
+				
+				loader.addEventListener(Event.COMPLETE, onLoaderComplete); // When file is loaded, call onLoaderComplete()
+			}
+			
+			// What to do when the prerecorded samples file has been loaded
+			// This function essentially reads the data from the file into the buffer, and then launches the animation
+			public function onLoaderComplete(event:Event):void
+			{
+				// The numbers in the file are separated by commas and new lines
+				// Make array which puts each number (with comma) in different cell of array 
+				var stringArray:Array = (String(loader.data)).split("\n");
+				
+				// If the array is empty, try to load a different file
+				if (stringArray.length == 0)
+				{
+					loadDataFromFile();
+					return;
+				}
+				
+				// Go through array, extract 'just' the number (excluding the comma) and add that number to the samples buffer
+				for (var i:int = 0; i < stringArray.length; i++)
+				{
+					var temp:int = int(stringArray[i]);
+					samplesBuffer.addItem(temp);
+				}
+				
+				if (samplesBuffer.length > 300)
+				{
+					enoughData = true;
+					launchAnimation();
+				}
+			}
+			
+			
+			public function onIOError(event:Event):void
+			{
+				loadDataFromFile();
+				//Alert.show("security error");
+			}
+			
+			public function handleLinkButton():void
+			{
+				navigateToURL(new URLRequest("info.html"),"_blank");
+			}
+			
+			public function onSocketClose(event:Event):void
+			{
+				errors = true;
+				trace(connectionLostMessage);
+				//Alert.show("security error");
+			}
+			
+			public function onSocketSecurityError(event:SecurityErrorEvent):void
+			{
+				errors = true;
+				Alert.show("security error");
+			}
+			
+			/* Opens up the bloom control panel, this is used to change the settings for the system
+			*/
+			public function openControlPanel():void
+			{
+				var popup:IFlexDisplayObject = PopUpManager.createPopUp(this, ControlPanel , false);
+				PopUpManager.centerPopUp(popup);
+			}
+			
+		]]>
+	</mx:Script>
+	
+</mx:Application>
