@@ -18,7 +18,8 @@ function createBloom2(counter, iParam) {
     x = getRandomInt(0, svgW);
     
     var randomPaletteIndex = getRandomInt(0, NUM_PALETTES);
-    randomPaletteIndex = NUM_PALETTES - 1;
+    // randomPaletteIndex = NUM_PALETTES - 1;
+    randomPaletteIndex = 1;
     var randomContext = contexts[randomPaletteIndex];
 
     var colors = [];
@@ -32,7 +33,7 @@ function createBloom2(counter, iParam) {
         randomX = mod((randomX - getRandomInt(0, Math.floor(w / 3))), w);
         randomY = mod((randomY - getRandomInt(0, Math.floor(h / 3))), h);
         var pixelData = randomContext.getImageData(randomX, randomY, 1, 1).data;
-        while (!isColorValid(pixelData[0], pixelData[1], pixelData[2])) {
+        while (!isColorValid2(pixelData[0], pixelData[1], pixelData[2])) {
             randomX = mod((randomX - getRandomInt(0, Math.floor(w / 3))), w);
             randomY = mod((randomY - getRandomInt(0, Math.floor(h / 3))), h);
             pixelData = randomContext.getImageData(randomX, randomY, 1, 1).data;
@@ -44,7 +45,7 @@ function createBloom2(counter, iParam) {
     for (var i = 0; i < colors.length; i++) {
         colors[i] = {
             h: colors[i].h,
-            s: Math.floor(colors[i].s + 50, 100),
+            s: Math.floor(colors[i].s, 100),
             v: colors[i].v
         }
     }
@@ -55,10 +56,26 @@ function createBloom2(counter, iParam) {
     }
 
     // Initial Radius
-    var init_r = 10;
+    var init_r = 1;
     var max_radius = init_r + Math.abs(smoothedData[iParam] / 10);
     var i = numRings;
-    circle_array.push(new g_circle_t2(counter, 1, 40, x, y, init_r, init_r + max_radius, rgbColors[i-1].r, rgbColors[i-1].g, rgbColors[i-1].b, max_radius * 2, 0));
+    
+    for (var j = numRings - 1; j >= 0; j--) {
+        console.log(j);
+        circle_array.push(new g_circle_t2(counter, 1, 100 - j * 10, x, y, init_r, init_r + max_radius + 15 * (j + 1), rgbColors[j].r, rgbColors[j].g, rgbColors[j].b, max_radius * 2, 0));
+    }
+
+    circle_array.push(new g_circle_t2(counter, 1, 100, x, y, init_r, init_r + max_radius, rgbColors[i-1].r, rgbColors[i-1].g, rgbColors[i-1].b, max_radius * 2, 0));
+    
+    // circle_array.push(new g_circle_t2(counter, 1 - ((Math.floor((numRings - 1 - i) / 3)) + 1) / 3 * 0.5 , (numRings - 1 - i) * 12 + Math.floor((numRings - 1 - i) / 3) * 16, x, y, init_r, init_r + max_radius * (2 * i/3 + 1 + ((numRings - 1) / 3)) / numRings, rgbColors[i-1].r, rgbColors[i-1].g, rgbColors[i-1].b, max_radius * 2, 1));
+
+    // var radius_of_largest_ring = (init_r + max_radius * (2 * (numRings - 1) / 3 + 1 + ((numRings - 1) / 3)) / numRings) * Math.log(21.5);
+    // x = Math.min(svgW - radius_of_largest_ring, Math.max(x, radius_of_largest_ring));
+    // y = Math.min(svgH - radius_of_largest_ring, Math.max(y, radius_of_largest_ring));
+
+    // for (i = numRings - 1; i >= 0; i--) {
+        // circle_array.push(new g_circle_t2(counter, 1 - ((Math.floor((numRings - 1 - i) / 3)) + 1) / 3 * 0.5 , (numRings - 1 - i) * 12 + Math.floor((numRings - 1 - i) / 3) * 16 * 0, x, y, init_r, init_r + max_radius * 2 * (2 * (i*0.1)/3 + 1 + ((numRings - 1) / 3)) / numRings, rgbColors[i].r, rgbColors[i].g, rgbColors[i].b, max_radius * 2, 0));
+    // }
 }
 
 function g_circle_t2(counter, opacity, wait, x, y, min_r, max_r, red, green, blue, max_time, invisflag){
@@ -119,24 +136,27 @@ function update_circle_state2(g_circle) {
         g_circle.r = Math.min(g_circle.r + 1, g_circle.max_r);
 
         if (g_circle.is_fading_away) {
-
             var blur = 4 / Math.pow(Math.E, g_circle.time / g_circle.max_time);
-            // console.log('blur');
-            // blur = (1 - (g_circle.time / g_circle.max_time)) * g_circle.opacity;
             g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
-            
-            // if (g_circle.time > 100 * g_circle.max_time) {
-            //     g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',0)';
-            // } else {
-            //     var blur = g_circle.time / g_circle.max_time;
-            //     blur = (1 - (g_circle.time / g_circle.max_time)) * g_circle.opacity;
-            //     g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
-            // }
-                
+        } else {
+            // var blur = Math.pow(4 / Math.pow(Math.E, g_circle.time / g_circle.max_time), -1);
+            // g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
         }
         g_circle_draw2(g_circle);
         g_circle.time++;
     } else {
         g_circle.wait -= 1;
     }
+}
+
+function isColorValid2(r, g, b) {
+    var isWhite = r > 200 && g > 200 && b > 200;
+    var isBlack = r < 70 && g < 70 && b < 70;
+    var isGray = Math.abs(r - g) < 40 && Math.abs(r - b) < 40 && Math.abs(g - b) < 40;
+    if (isWhite || isBlack || isGray) {
+        return false;
+    } else {
+        return true;
+    }
+
 }
