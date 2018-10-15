@@ -4,8 +4,7 @@ function createBloom2(counter, iParam) {
     var svgW = windowWidth;
     var svgH = windowHeight;
 
-    var numRings = NUM_RINGS_PER_BLOOM;
-    numRings = Math.floor((10 + Math.abs(smoothedData[iParam] / 10)) / 10);
+    var numRings = getRandomInt(Math.floor((10 + Math.abs(smoothedData[iParam] / 10)) / 10), NUM_RINGS_PER_BLOOM);
 
     // Assume time differences between sensor readings are uniform
     var firstDerivative1 = smoothedData[iParam] - smoothedData[iParam - 1];
@@ -57,15 +56,16 @@ function createBloom2(counter, iParam) {
 
     // Initial Radius
     var init_r = 1;
-    var max_radius = init_r + Math.abs(smoothedData[iParam] / 10);
+    var max_radius = init_r + Math.abs(smoothedData[iParam] / 10)
+    var init_max_radius = init_r + Math.abs(smoothedData[iParam] / 100);
     var i = numRings;
     
-    for (var j = numRings - 1; j >= 0; j--) {
+    for (var j = numRings - 1; j >= 1; j--) {
         console.log(j);
-        circle_array.push(new g_circle_t2(counter, 1, 100 - j * 20, x, y, init_r, init_r + max_radius + 15 * (j + 1), rgbColors[j].r, rgbColors[j].g, rgbColors[j].b, max_radius * 2, 0));
+        circle_array.push(new g_circle_t2(counter, 1, j, 0, x, y, init_r + 5 * j, init_r + init_max_radius + 15 * j, rgbColors[j].r, rgbColors[j].g, rgbColors[j].b, max_radius * 2, 0));
     }
 
-    circle_array.push(new g_circle_t2(counter, 1, 100, x, y, init_r, init_r + max_radius, rgbColors[i-1].r, rgbColors[i-1].g, rgbColors[i-1].b, max_radius * 2, 0));
+    // circle_array.push(new g_circle_t2(counter, 1, 1, 100, x, y, init_r, init_r + getRandomInt(max_radius / 2 , max_radius), rgbColors[0].r, rgbColors[0].g, rgbColors[0].b, max_radius * 2, 0));
     
     // circle_array.push(new g_circle_t2(counter, 1 - ((Math.floor((numRings - 1 - i) / 3)) + 1) / 3 * 0.5 , (numRings - 1 - i) * 12 + Math.floor((numRings - 1 - i) / 3) * 16, x, y, init_r, init_r + max_radius * (2 * i/3 + 1 + ((numRings - 1) / 3)) / numRings, rgbColors[i-1].r, rgbColors[i-1].g, rgbColors[i-1].b, max_radius * 2, 1));
 
@@ -78,7 +78,7 @@ function createBloom2(counter, iParam) {
     // }
 }
 
-function g_circle_t2(counter, opacity, wait, x, y, min_r, max_r, red, green, blue, max_time, invisflag){
+function g_circle_t2(counter, opacity, ring, wait, x, y, min_r, max_r, red, green, blue, max_time, invisflag){
     // Center coordinates of the circle
     this.id = counter;
 
@@ -95,6 +95,8 @@ function g_circle_t2(counter, opacity, wait, x, y, min_r, max_r, red, green, blu
     */
     this.time = 0;
     this.max_time = max_time;
+
+    this.ring = ring;
 
     // Radius of the circle
     this.max_r = max_r;
@@ -133,7 +135,7 @@ function update_circle_state2(g_circle) {
             g_circle.is_fading_away = true;
         }
 
-        g_circle.r = Math.min(g_circle.r + 1, g_circle.max_r);
+        g_circle.r = Math.min(Math.pow(g_circle.ring, 0.008) * (g_circle.r + 0.5), g_circle.max_r);
 
         if (g_circle.is_fading_away) {
             var blur = 4 / Math.pow(Math.E, g_circle.time / g_circle.max_time);

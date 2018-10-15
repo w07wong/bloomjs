@@ -2,7 +2,7 @@ var a = [726, 891, 664, 37, 152, 273, 456, 787, 881, 509, 257, 470, 517, 734, 56
 
 var NUM_PALETTES = 9;
 var SEISMOMETER_DATA_SERVER = "http://californiareportcard.org/naturalFrequencies/naturalFrequencies.py";
-var NUM_RINGS_PER_BLOOM = 5; // 16
+var NUM_RINGS_PER_BLOOM = 16; // 16
 
 //LOAD COLOR PALETTES
 
