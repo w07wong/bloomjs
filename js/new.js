@@ -62,7 +62,7 @@ function createBloom2(counter, iParam) {
     
     for (var j = numRings - 1; j >= 1; j--) {
         console.log(j);
-        circle_array.push(new g_circle_t2(counter, 1, j, 0, x, y, init_r + 5 * j, init_r + init_max_radius + 15 * j, rgbColors[j].r, rgbColors[j].g, rgbColors[j].b, max_radius * 2, 0));
+        circle_array.push(new g_circle_t2(counter, 1, j, 0, x, y, init_r, init_r + init_max_radius + 15 * j, rgbColors[j].r, rgbColors[j].g, rgbColors[j].b, max_radius * 2, 0));
     }
 
     // circle_array.push(new g_circle_t2(counter, 1, 1, 100, x, y, init_r, init_r + getRandomInt(max_radius / 2 , max_radius), rgbColors[0].r, rgbColors[0].g, rgbColors[0].b, max_radius * 2, 0));
@@ -135,14 +135,14 @@ function update_circle_state2(g_circle) {
             g_circle.is_fading_away = true;
         }
 
-        g_circle.r = Math.min(Math.pow(g_circle.ring, 0.008) * (g_circle.r + 0.5), g_circle.max_r);
+        g_circle.r = Math.min(Math.pow(g_circle.ring, 0.01) * (g_circle.r + 0.2), g_circle.max_r);
 
         if (g_circle.is_fading_away) {
             var blur = 4 / Math.pow(Math.E, g_circle.time / g_circle.max_time);
             g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
         } else {
-            // var blur = Math.pow(4 / Math.pow(Math.E, g_circle.time / g_circle.max_time), -1);
-            // g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
+            var blur = Math.pow(2 / Math.pow(Math.E, g_circle.time / g_circle.max_time), -1);
+            g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
         }
         g_circle_draw2(g_circle);
         g_circle.time++;
