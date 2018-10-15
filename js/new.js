@@ -62,7 +62,7 @@ function createBloom2(counter, iParam) {
     
     for (var j = numRings - 1; j >= 0; j--) {
         console.log(j);
-        circle_array.push(new g_circle_t2(counter, 1, 100 - j * 10, x, y, init_r, init_r + max_radius + 15 * (j + 1), rgbColors[j].r, rgbColors[j].g, rgbColors[j].b, max_radius * 2, 0));
+        circle_array.push(new g_circle_t2(counter, 1, 100 - j * 20, x, y, init_r, init_r + max_radius + 15 * (j + 1), rgbColors[j].r, rgbColors[j].g, rgbColors[j].b, max_radius * 2, 0));
     }
 
     circle_array.push(new g_circle_t2(counter, 1, 100, x, y, init_r, init_r + max_radius, rgbColors[i-1].r, rgbColors[i-1].g, rgbColors[i-1].b, max_radius * 2, 0));
