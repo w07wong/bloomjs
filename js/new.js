@@ -84,8 +84,6 @@ function g_circle_t2(counter, opacity, wait, x, y, min_r, max_r, red, green, blu
     this.r = min_r;
     this.min_r = min_r;
 
-    console.log(this.r);
-
     // Max radius of the circle before it starts shrinking
     
     this.is_fading_away = false;
@@ -121,10 +119,20 @@ function update_circle_state2(g_circle) {
         g_circle.r = Math.min(g_circle.r + 1, g_circle.max_r);
 
         if (g_circle.is_fading_away) {
-            var blur = g_circle.time / g_circle.max_time;
-            blur = (1 - (g_circle.time / g_circle.max_time)) * g_circle.opacity;
-            console.log(blur);
+
+            var blur = 4 / Math.pow(Math.E, g_circle.time / g_circle.max_time);
+            // console.log('blur');
+            // blur = (1 - (g_circle.time / g_circle.max_time)) * g_circle.opacity;
             g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
+            
+            // if (g_circle.time > 100 * g_circle.max_time) {
+            //     g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',0)';
+            // } else {
+            //     var blur = g_circle.time / g_circle.max_time;
+            //     blur = (1 - (g_circle.time / g_circle.max_time)) * g_circle.opacity;
+            //     g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
+            // }
+                
         }
         g_circle_draw2(g_circle);
         g_circle.time++;
