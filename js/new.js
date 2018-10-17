@@ -18,7 +18,7 @@ function createBloom2(counter, iParam) {
     
     var randomPaletteIndex = getRandomInt(0, NUM_PALETTES);
     // randomPaletteIndex = NUM_PALETTES - 1;
-    randomPaletteIndex = 1;
+    // randomPaletteIndex = 3;
     var randomContext = contexts[randomPaletteIndex];
 
     var colors = [];
@@ -161,9 +161,9 @@ function update_circle_state2(g_circle) {
 function update_circle_state3(g_circle) {
     if (g_circle.wait <= 0) {
         if (g_circle.is_fading_away) {
-                var blur = 8 / Math.pow(Math.E, g_circle.time / g_circle.max_time);
+                var blur = (NUM_RINGS_PER_BLOOM - g_circle.ring) / Math.pow(Math.E, g_circle.time / g_circle.max_time);
                 g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
-                if (blur <= 0.0005) {
+                if (blur <= 0.0001) {
                     console.log('flicker');
                     for (var i = circle_array.length - 1; i >= 0; i--) {
                         if (circle_array[i].id == g_circle.id) {
@@ -173,9 +173,8 @@ function update_circle_state3(g_circle) {
                     }
                     return;
                 }
-                g_circle_draw2(g_circle);
         } else {
-            if (g_circle.time >= g_circle.max_time ) {
+            if (g_circle.time >= g_circle.max_time) {
                 g_circle.is_fading_away = true;
             }
             g_circle.r = g_circle.max_r * Math.log(1.5 + (g_circle.time / g_circle.max_time) * 20);
@@ -185,8 +184,8 @@ function update_circle_state3(g_circle) {
             if (g_circle.invisflag == 1) {
                 g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + '0' + ')';
             }
-            g_circle_draw2(g_circle);
         }
+        g_circle_draw2(g_circle);
         g_circle.time++;
     } else {
         g_circle.wait--;

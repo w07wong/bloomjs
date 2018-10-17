@@ -388,7 +388,7 @@ function createBloom2(counter, iParam) {
     
     var randomPaletteIndex = getRandomInt(0, NUM_PALETTES);
     // randomPaletteIndex = NUM_PALETTES - 1;
-    randomPaletteIndex = 1;
+    // randomPaletteIndex = 3;
     var randomContext = contexts[randomPaletteIndex];
 
     var colors = [];
@@ -499,10 +499,39 @@ function g_circle_draw2(g_circle){
     ctx.fill();
 }
 
+function update_circle_state2(g_circle) {
+    if (g_circle.wait <= 0) {
+        if (g_circle.time >= g_circle.max_time + NUM_RINGS_PER_BLOOM -  g_circle.ring) {
+            g_circle.is_fading_away = true;
+        }
+
+        // TODO: Need to slow down near ending
+        // g_circle.r = Math.min(Math.pow(g_circle.ring, 0.01) * (g_circle.r + 0.2), g_circle.max_r);
+        if (g_circle.r >= g_circle.max_r) {
+            g_circle.r = g_circle.max_r;
+        } else {
+            g_circle.r = g_circle.r + 1;
+            // g_circle.r = -1 * Math.pow(g_circle.r, 2) + 2;
+            console.log(-1 * Math.pow(g_circle.r, 2) + 2);
+        }        
+        if (g_circle.is_fading_away) {
+            var blur = 6 / Math.pow(Math.E, g_circle.time / g_circle.max_time);
+            g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
+        } else {
+            var blur = Math.pow(2 / Math.pow(Math.E, g_circle.time / g_circle.max_time), -1);
+            g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
+        }
+        g_circle_draw2(g_circle);
+        g_circle.time++;
+    } else {
+        g_circle.wait -= 1;
+    }
+}
+
 function update_circle_state3(g_circle) {
     if (g_circle.wait <= 0) {
         if (g_circle.is_fading_away) {
-                var blur = 8 / Math.pow(Math.E, g_circle.time / g_circle.max_time);
+                var blur = (NUM_RINGS_PER_BLOOM - g_circle.ring) / Math.pow(Math.E, g_circle.time / g_circle.max_time);
                 g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + blur.toString() + ')';
                 if (blur <= 0.0001) {
                     console.log('flicker');
@@ -515,7 +544,7 @@ function update_circle_state3(g_circle) {
                     return;
                 }
         } else {
-            if (g_circle.time >= g_circle.max_time ) {
+            if (g_circle.time >= g_circle.max_time) {
                 g_circle.is_fading_away = true;
             }
             g_circle.r = g_circle.max_r * Math.log(1.5 + (g_circle.time / g_circle.max_time) * 20);
