@@ -24,7 +24,7 @@ This file renders blooms and animates them based on seismic data from http://cal
 
 The function poll() is an AJAX request which calls processData() on the response from the server.  While data is constantly polled and processed, the yimmy() function is also running in the background.  Every 300 milliseconds, yimmy() refreshes animations with update2() and main().
 
-update2() handles Bloom creation.  This function takes processed data and if the data represents movement in the fault line, calls createBloom().  The responsibilities of createBloom() are: choose random starting X and Y variables for a Bloom, choose ranodm colors for the Bloom, choose a random number of rings and call g_circle_t() to create Bloom objects.  Note that Bloom objects are just cricles.
+update2() handles Bloom creation.  This function takes processed data, and if the data represents movement in at the Hayward Fault, calls createBloom().  The responsibilities of createBloom() are: choose random starting X and Y coordinates for a Bloom, choose ranodm colors for the Bloom, choose a random number of rings and call g_circle_t() to create Bloom objects.  Note that Bloom objects are just cricles.
 
 The parameters required to create a Bloom are:
   - counter (used as a Bloom's id)
@@ -42,6 +42,13 @@ The parameters required to create a Bloom are:
   - invisflag (whether or not a circle should be rendered)
 
 All Bloom objects are stored in an array called circle_array.  As noted previously, main() helps refresh animations through update() which calls update_circle_state().  The last function takes a Bloom object and renders it from a point to a full circle, bluring it in as the circle grows and fading it out once the circle as reached max radius.  Circle growth follows a logarithmic function, so the rate of growth is fast initially but slows down as the radius reaches its maximum.
+
+There are various functions that handle color functionality.  Bloom colors are derived from palette9.jpg located inside the folder palettes.  If you wish to use more images to generate colors for Blooms, simply modify the randomPaletteIndex variable in createBloom().
+
+### index.html
+This file sets up 10 HTML canvas objects.  Nine are used to store the nine palette images and the last canvas is used to render Blooms.
+
+When the page loads, it calls yimmy.init() and yimmy.start().  The init function allows for any variables to be passed to main.js and start() begins the animation.
 
 # How to Run The Program
 To run the code locally, I used
