@@ -67,7 +67,7 @@ function poll() {
     //     timeout: 250
     // });
     processData(a);
-    setTimeout(function() {poll()}, 250);
+    setTimeout(function() {poll()}, 1000);
     // console.log('processing');
 }
 poll();
@@ -426,6 +426,7 @@ function update_circle_state(g_circle) {
 
             if (g_circle.invisflag == 1) {
                 g_circle.gradient = 'rgba(' + g_circle.red.toString() + ',' + g_circle.green.toString() + ',' + g_circle.blue.toString() + ',' + '0' + ')';
+                smoothedData.pop();
             }
         }
         g_circle_draw(g_circle);
